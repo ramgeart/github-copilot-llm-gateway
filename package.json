@@ -2,7 +2,7 @@
   "name": "github-copilot-llm-gateway",
   "displayName": "GitHub Copilot LLM Gateway",
   "description": "Connect GitHub Copilot to open-source models via vLLM or any OpenAI-compatible server",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "publisher": "AndrewButson",
   "icon": "assets/copilot-llm-gateway.png",
   "private": true,
@@ -23,6 +23,10 @@
     "esbuild": "npm run esbuild-base -- --sourcemap",
     "esbuild-watch": "npm run esbuild-base -- --sourcemap --watch",
     "test-compile": "tsc -p ./",
+    "lint": "eslint \"src/**/*.ts\"",
+    "test-build": "tsc -p tsconfig.test.json",
+    "test": "npm run test-build && node --test \"out-test/__tests__/*.test.js\"",
+    "test-coverage": "npm run test-build && node --test --experimental-test-coverage \"out-test/__tests__/*.test.js\"",
     "deploy": "vsce publish --no-yarn",
     "package": "vsce package --no-yarn"
   },
@@ -80,19 +84,19 @@
         },
         "github.copilot.llm-gateway.defaultMaxTokens": {
           "type": "number",
-          "default": 32768,
-          "description": "Default maximum input tokens for models (context window)",
+          "default": 262144,
+          "description": "Fallback context window size (input tokens) when the server does not report it",
           "order": 4
         },
         "github.copilot.llm-gateway.defaultMaxOutputTokens": {
           "type": "number",
           "default": 4096,
-          "description": "Default maximum output tokens for models",
+          "description": "Fallback maximum output tokens when the server does not report context size",
           "order": 5
         },
         "github.copilot.llm-gateway.enableImageInput": {
           "type": "boolean",
-          "default": false,
+          "default": true,
           "description": "Enable image input capability for models that support multimodal requests",
           "order": 6
         },
@@ -120,13 +124,13 @@
     }
   },
   "devDependencies": {
-    "@types/node": "^24.10.1",
+    "@types/node": "^25.6.0",
     "@types/vscode": "^1.106.0",
-    "@typescript-eslint/eslint-plugin": "^8.48.0",
-    "@typescript-eslint/parser": "^8.48.0",
+    "@typescript-eslint/eslint-plugin": "^8.58.1",
+    "@typescript-eslint/parser": "^8.58.1",
     "@vscode/vsce": "^3.7.1",
-    "esbuild": "^0.27.0",
-    "eslint": "^9.39.1",
-    "typescript": "^5.7.2"
+    "esbuild": "^0.28.0",
+    "eslint": "^10.2.0",
+    "typescript": "^6.0.2"
   }
 }

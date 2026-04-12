@@ -4,10 +4,7 @@ import { GatewayProvider } from './provider';
 /**
  * Extension activation
  */
-export function activate(context: vscode.ExtensionContext) {
-  console.log('GitHub Copilot LLM Gateway extension is now active');
-
-  // Create and register the language model provider
+export function activate(context: vscode.ExtensionContext): void {
   const provider = new GatewayProvider(context);
 
   const disposable = vscode.lm.registerLanguageModelChatProvider(
@@ -17,7 +14,6 @@ export function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(disposable);
 
-  // Register a command to test the connection
   const testCommand = vscode.commands.registerCommand(
     'github.copilot.llm-gateway.testConnection',
     async () => {
@@ -29,7 +25,7 @@ export function activate(context: vscode.ExtensionContext) {
 
         if (models.length > 0) {
           vscode.window.showInformationMessage(
-            `GitHub Copilot LLM Gateway: Successfully connected! Found ${models.length} model(s): ${models.map(m => m.name).join(', ')}`
+            `GitHub Copilot LLM Gateway: Successfully connected! Found ${models.length} model(s): ${models.map((m) => m.name).join(', ')}`
           );
         } else {
           vscode.window.showWarningMessage(
@@ -45,13 +41,11 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(testCommand);
-
-  console.log('Copilot LLM Gateway provider registered with vendor ID: copilot-llm-gateway');
 }
 
 /**
  * Extension deactivation
  */
-export function deactivate() {
-  console.log('GitHub Copilot LLM Gateway extension is now deactivated');
+export function deactivate(): void {
+  // no-op
 }

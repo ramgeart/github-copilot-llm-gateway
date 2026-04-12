@@ -7,6 +7,12 @@ export interface OpenAIModel {
   object: string;
   created: number;
   owned_by: string;
+  /** vLLM, LiteLLM */
+  max_model_len?: number;
+  /** Ollama, LocalAI, LM Studio */
+  context_length?: number;
+  /** llama.cpp */
+  context_window?: number;
 }
 
 export interface OpenAIModelsResponse {
@@ -14,18 +20,23 @@ export interface OpenAIModelsResponse {
   data: OpenAIModel[];
 }
 
-export interface OpenAIMessage {
-  role: 'system' | 'user' | 'assistant' | 'tool';
-  content: string | null;
-  tool_calls?: Array<{
-    id: string;
-    type: 'function';
-    function: {
-      name: string;
-      arguments: string;
-    };
-  }>;
-  tool_call_id?: string;
+/**
+ * Wire-format message sent to an OpenAI-compatible chat endpoint.
+ *
+ * Typed loosely because we pass through a handful of provider-specific
+ * variants (content can be string OR an array of text/image parts, tool
+ * results appear as `role: 'tool'` messages, etc.). Treat it as the shape
+ * that JSON.stringify will be called on.
+ */
+export type OpenAIMessage = Record<string, unknown>;
+
+export interface OpenAIToolDefinition {
+  type: 'function';
+  function: {
+    name: string;
+    description?: string;
+    parameters?: unknown;
+  };
 }
 
 export interface OpenAIChatCompletionRequest {
@@ -37,6 +48,10 @@ export interface OpenAIChatCompletionRequest {
   top_p?: number;
   frequency_penalty?: number;
   presence_penalty?: number;
+  tools?: OpenAIToolDefinition[];
+  tool_choice?: 'auto' | 'required' | 'none';
+  parallel_tool_calls?: boolean;
+  [key: string]: unknown;
 }
 
 export interface OpenAIChatCompletionChunk {

@@ -7,9 +7,12 @@ eslint.config.mjs
 **/*.map
 **/*.ts
 tsconfig.json
+tsconfig.test.json
+out-test/**
 node_modules/**
 *.vsix
 .devcontainer/**
+.github/**
 PROJECT_SUMMARY.md
 INSTALLATION_TESTING.md
 package-lock.json
