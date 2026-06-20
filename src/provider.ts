@@ -50,7 +50,6 @@ import { diagnoseModelFetchError } from './errorDiagnostics';
 import {
   ConfigurationTarget as SecretConfigurationTarget,
   LegacyConfigAccessor,
-  SECRET_KEYS,
   formatMigrationToast,
   migrateLegacySecrets,
   parseCustomHeadersJson,
@@ -124,26 +123,7 @@ function describeToolMode(toolMode: vscode.LanguageModelChatToolMode | undefined
  * the config-change handler triggers a re-migration into SecretStorage and a
  * model refresh (issue #28). Those settings are deprecated for direct use.
  */
-const MODEL_AFFECTING_KEYS: readonly string[] = [
-  'github.copilot.llm-gateway.serverUrl',
-  'github.copilot.llm-gateway.apiKey',
-  'github.copilot.llm-gateway.requestTimeout',
-  'github.copilot.llm-gateway.defaultMaxTokens',
-  'github.copilot.llm-gateway.defaultMaxOutputTokens',
-  'github.copilot.llm-gateway.enableImageInput',
-  'github.copilot.llm-gateway.enableToolCalling',
-  'github.copilot.llm-gateway.customHeaders',
-];
 
-/**
- * Legacy plain-text settings that we still watch on the config-change event
- * so a user manually re-adding them in `settings.json` gets re-migrated into
- * SecretStorage instead of silently sitting in plain text (issue #28).
- */
-const LEGACY_SECRET_KEYS: readonly string[] = [
-  'github.copilot.llm-gateway.apiKey',
-  'github.copilot.llm-gateway.customHeaders',
-];
 
 /**
  * Language model provider for OpenAI-compatible inference servers.
@@ -227,8 +207,18 @@ export class GatewayProvider implements vscode.LanguageModelChatProvider {
   private lastSuccessfulFetchAt?: number;
   private lastConnectionError?: string;
 
-  constructor(context: vscode.ExtensionContext) {
-    this.outputChannel = vscode.window.createOutputChannel('GitHub Copilot LLM Gateway');
+  private readonly secretKeys: { apiKey: string; customHeaders: string };
+
+  constructor(
+    context: vscode.ExtensionContext,
+    private readonly suffix: string = ''
+  ) {
+    const configSection = `github.copilot.llm-gateway${this.suffix ? `-${this.suffix}` : ''}`;
+    this.secretKeys = {
+      apiKey: `${configSection}.apiKey`,
+      customHeaders: `${configSection}.customHeaders`,
+    };
+    this.outputChannel = vscode.window.createOutputChannel(`LLM Gateway ${this.suffix || '1'}`);
     this.secrets = context.secrets;
     this.config = this.loadConfig();
     this.client = new GatewayClient(this.config, (msg) => this.outputChannel.appendLine(msg));
@@ -239,7 +229,7 @@ export class GatewayProvider implements vscode.LanguageModelChatProvider {
       this._onDidChangeRequestState,
       this._onDidChangeStatusSnapshot,
       vscode.workspace.onDidChangeConfiguration((e: vscode.ConfigurationChangeEvent) => {
-        if (!e.affectsConfiguration('github.copilot.llm-gateway')) {
+        if (!e.affectsConfiguration(configSection)) {
           return;
         }
         this.outputChannel.appendLine('Configuration changed, reloading...');
@@ -247,19 +237,20 @@ export class GatewayProvider implements vscode.LanguageModelChatProvider {
         // typed into settings.json or pasted via the settings UI), pull it
         // back into SecretStorage and clear the plain-text copy. Errors are
         // logged but never thrown — the config-change listener can't be async.
-        if (LEGACY_SECRET_KEYS.some((key) => e.affectsConfiguration(key))) {
+        const legacyKeys = this.getLegacySecretKeys();
+        if (legacyKeys.some((key) => e.affectsConfiguration(key))) {
           void this.reMigrateLegacySecrets();
         }
         this.reloadConfig();
         // Only nudge VS Code to refetch models when a setting that actually
         // affects the model list has changed.
-        const affectsModels = MODEL_AFFECTING_KEYS.some((key) => e.affectsConfiguration(key));
+        const affectsModels = this.getModelAffectingKeys().some((key) => e.affectsConfiguration(key));
         if (affectsModels) {
           this._onDidChangeLanguageModelChatInformation.fire();
         }
       }),
       this.secrets.onDidChange((e: vscode.SecretStorageChangeEvent) => {
-        if (e.key !== SECRET_KEYS.apiKey && e.key !== SECRET_KEYS.customHeaders) {
+        if (e.key !== this.secretKeys.apiKey && e.key !== this.secretKeys.customHeaders) {
           return;
         }
         // Another VS Code window (or our own setApiKey) updated a secret —
@@ -273,6 +264,32 @@ export class GatewayProvider implements vscode.LanguageModelChatProvider {
         });
       })
     );
+  }
+
+  private getModelAffectingKeys(): string[] {
+    const pfx = `github.copilot.llm-gateway${this.suffix ? `-${this.suffix}` : ''}`;
+    return [
+      `${pfx}.serverUrl`,
+      `${pfx}.apiKey`,
+      `${pfx}.requestTimeout`,
+      `${pfx}.defaultMaxTokens`,
+      `${pfx}.defaultMaxOutputTokens`,
+      `${pfx}.enableImageInput`,
+      `${pfx}.enableToolCalling`,
+      `${pfx}.customHeaders`,
+    ];
+  }
+
+  private getLegacySecretKeys(): string[] {
+    const pfx = `github.copilot.llm-gateway${this.suffix ? `-${this.suffix}` : ''}`;
+    return [
+      `${pfx}.apiKey`,
+      `${pfx}.customHeaders`,
+    ];
+  }
+
+  public getSuffix(): string {
+    return this.suffix;
   }
 
   /**
@@ -306,9 +323,9 @@ export class GatewayProvider implements vscode.LanguageModelChatProvider {
   public async setApiKey(apiKey: string): Promise<void> {
     const trimmed = apiKey.trim();
     if (trimmed.length === 0) {
-      await this.secrets.delete(SECRET_KEYS.apiKey);
+      await this.secrets.delete(this.secretKeys.apiKey);
     } else {
-      await this.secrets.store(SECRET_KEYS.apiKey, trimmed);
+      await this.secrets.store(this.secretKeys.apiKey, trimmed);
     }
     // `onDidChange` will repopulate the cache, but we also refresh
     // synchronously so callers can immediately use the new value.
@@ -322,9 +339,9 @@ export class GatewayProvider implements vscode.LanguageModelChatProvider {
    */
   public async setCustomHeaders(headers: Record<string, string>): Promise<void> {
     if (Object.keys(headers).length === 0) {
-      await this.secrets.delete(SECRET_KEYS.customHeaders);
+      await this.secrets.delete(this.secretKeys.customHeaders);
     } else {
-      await this.secrets.store(SECRET_KEYS.customHeaders, JSON.stringify(headers));
+      await this.secrets.store(this.secretKeys.customHeaders, JSON.stringify(headers));
     }
     await this.refreshSecretCache();
   }
@@ -335,8 +352,8 @@ export class GatewayProvider implements vscode.LanguageModelChatProvider {
   }
 
   private async refreshSecretCache(): Promise<void> {
-    const apiKey = await this.secrets.get(SECRET_KEYS.apiKey);
-    const headersJson = await this.secrets.get(SECRET_KEYS.customHeaders);
+    const apiKey = await this.secrets.get(this.secretKeys.apiKey);
+    const headersJson = await this.secrets.get(this.secretKeys.customHeaders);
     this.secretCache = {
       apiKey: apiKey ?? '',
       customHeaders: parseCustomHeadersJson(headersJson, (m) =>
@@ -351,7 +368,8 @@ export class GatewayProvider implements vscode.LanguageModelChatProvider {
       const result = await migrateLegacySecrets(
         this.legacyConfigAccessor(),
         this.secrets,
-        (m) => this.outputChannel.appendLine(m)
+        (m) => this.outputChannel.appendLine(m),
+        this.secretKeys
       );
       if (result.apiKeyMigrated || result.customHeadersMigrated) {
         // No toast on the re-migration path — the user is actively editing
@@ -372,7 +390,8 @@ export class GatewayProvider implements vscode.LanguageModelChatProvider {
    * small wrapper so the migration logic can be unit-tested without `vscode`.
    */
   private legacyConfigAccessor(): LegacyConfigAccessor {
-    const config = vscode.workspace.getConfiguration('github.copilot.llm-gateway');
+    const section = `github.copilot.llm-gateway${this.suffix ? `-${this.suffix}` : ''}`;
+    const config = vscode.workspace.getConfiguration(section);
     return {
       get: <T>(section: string, defaultValue: T): T => config.get<T>(section, defaultValue),
       inspect: <T>(section: string) => {
@@ -631,7 +650,11 @@ export class GatewayProvider implements vscode.LanguageModelChatProvider {
       tools,
       toolChoice: hasTools ? this.mapToolChoice(options.toolMode) : undefined,
       parallelToolCalls: hasTools ? this.config.parallelToolCalling : undefined,
-      extraOptions: { ...this.config.extraModelOptions, ...options.modelOptions },
+      extraOptions: {
+        ...this.config.extraModelOptions,
+        ...(this.config.thinkingEffort ? { reasoning_effort: this.config.thinkingEffort } : {}),
+        ...options.modelOptions,
+      },
     });
 
     if (hasTools) {
@@ -1163,8 +1186,9 @@ export class GatewayProvider implements vscode.LanguageModelChatProvider {
           if (selection === 'Open Output') {
             this.outputChannel.show();
           } else if (selection === 'Disable Tool Calling') {
+            const section = `github.copilot.llm-gateway${this.suffix ? `-${this.suffix}` : ''}`;
             vscode.workspace
-              .getConfiguration('github.copilot.llm-gateway')
+              .getConfiguration(section)
               .update('enableToolCalling', false, vscode.ConfigurationTarget.Global);
           }
         },
@@ -1179,7 +1203,8 @@ export class GatewayProvider implements vscode.LanguageModelChatProvider {
   // ---------- config ----------
 
   private loadConfig(): GatewayConfig {
-    const config = vscode.workspace.getConfiguration('github.copilot.llm-gateway');
+    const section = `github.copilot.llm-gateway${this.suffix ? `-${this.suffix}` : ''}`;
+    const config = vscode.workspace.getConfiguration(section);
 
     // `apiKey` and `customHeaders` come from the in-memory secret cache
     // populated by `loadSecrets` / `refreshSecretCache`. The legacy
@@ -1208,6 +1233,7 @@ export class GatewayProvider implements vscode.LanguageModelChatProvider {
       verboseLogging: config.get<boolean>('verboseLogging', false),
       customHeaders: { ...this.secretCache.customHeaders },
       extraModelOptions: config.get<Record<string, unknown>>('extraModelOptions', {}) ?? {},
+      thinkingEffort: config.get<string>('thinkingEffort', ''),
     };
 
     const MAX_INT32 = 2147483647; // Maximum value for setTimeout (signed 32-bit integer)

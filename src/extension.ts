@@ -192,76 +192,79 @@ class StatusBarManager implements vscode.Disposable {
  * the secret load and is sent unauthenticated.
  */
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
-  const provider = new GatewayProvider(context);
+  const suffixes = ['', '2', '3', '4', '5'];
+  for (const suffix of suffixes) {
+    await activateProvider(context, suffix);
+  }
+}
+
+async function activateProvider(context: vscode.ExtensionContext, suffix: string): Promise<void> {
+  const providerId = `copilot-llm-gateway${suffix ? `-${suffix}` : ''}`;
+  const provider = new GatewayProvider(context, suffix);
   await provider.loadSecrets();
 
   const disposable = vscode.lm.registerLanguageModelChatProvider(
-    'copilot-llm-gateway',
+    providerId,
     provider
   );
-
   context.subscriptions.push(disposable);
 
-  // Status bar entry so users can see connection state at a glance and
-  // quickly refresh the model list. Without this, failed model fetches were
-  // invisible unless users happened to open the model picker. The visible
-  // label is context-aware (host when idle, model name during streaming,
-  // model + token count after) — see statusBarController.ts.
+  const configSection = `github.copilot.llm-gateway${suffix ? `-${suffix}` : ''}`;
+  const commandPrefix = `github.copilot.llm-gateway${suffix ? `-${suffix}` : ''}`;
+
   const statusBar = vscode.window.createStatusBarItem(
     vscode.StatusBarAlignment.Right,
     100
   );
-  statusBar.name = 'LLM Gateway';
-  // Click refreshes the gateway. The rich GHCP-style popup is the hover
-  // tooltip — it's the closest stable-API approximation to a floating
-  // status-bar popup. Clicking is wired to a useful action so the bar
-  // isn't dead.
-  statusBar.command = 'github.copilot.llm-gateway.refreshModels';
-  statusBar.show();
+  statusBar.name = `LLM Gateway ${suffix || '1'}`;
+  statusBar.command = `${commandPrefix}.refreshModels`;
+  
+  if (suffix === '') {
+    statusBar.show();
+  } else {
+    // Show only if configured with non-default serverUrl or apiKey
+    const config = vscode.workspace.getConfiguration(configSection);
+    const serverUrl = config.get<string>('serverUrl', '');
+    if (serverUrl && serverUrl !== 'http://localhost:8000') {
+      statusBar.show();
+    }
+  }
   context.subscriptions.push(statusBar);
 
   const statusManager = new StatusBarManager(
     statusBar,
     () =>
       vscode.workspace
-        .getConfiguration('github.copilot.llm-gateway')
+        .getConfiguration(configSection)
         .get<string>('serverUrl', 'http://localhost:8000'),
     () => provider.getStatusSnapshot()
   );
   context.subscriptions.push(statusManager);
 
-  // Live request state: streaming → responded → idle, with errors flashing in
-  // place. The provider fires `start` / `complete` / `error` events around
-  // each provideLanguageModelChatResponse call.
   context.subscriptions.push(
     provider.onDidChangeRequestState((event) => statusManager.onRequest(event))
   );
 
-  // Rich hover tooltip is rebuilt from the provider's snapshot — refresh it
-  // whenever the snapshot changes (model refresh, request completion, session
-  // totals tick) so a hovering user always sees current numbers.
   context.subscriptions.push(
-    provider.onDidChangeStatusSnapshot(() => statusManager.refreshTooltip())
+    provider.onDidChangeStatusSnapshot(() => {
+      // If configured later, show status bar
+      if (suffix !== '') {
+        const config = vscode.workspace.getConfiguration(configSection);
+        const serverUrl = config.get<string>('serverUrl', '');
+        if (serverUrl && serverUrl !== 'http://localhost:8000') {
+          statusBar.show();
+        }
+      }
+      statusManager.refreshTooltip();
+    })
   );
 
-  // Status dialog (opened by clicking the status bar) — the GHCP-style
-  // QuickPick with connection state, session totals, models, feature toggles,
-  // and quick actions. The controller subscribes to the provider's snapshot
-  // event while open so the values stay fresh without polling.
-  // Tooltip's "Show output log" link needs a registered command (command-link
-  // anchors can't call class methods directly). Tiny wrapper around
-  // provider.showOutput.
   context.subscriptions.push(
-    vscode.commands.registerCommand('github.copilot.llm-gateway.showOutput', () =>
+    vscode.commands.registerCommand(`${commandPrefix}.showOutput`, () =>
       provider.showOutput()
     )
   );
 
-  /**
-   * Probe the gateway silently (no error toast) and render the result in the
-   * status bar. Uses the provider's cached fetch so it doesn't double-hit the
-   * server when VS Code is already asking for models.
-   */
   const refreshStatusBar = async (): Promise<void> => {
     const cts = new vscode.CancellationTokenSource();
     try {
@@ -271,6 +274,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       );
       if (models.length > 0) {
         statusManager.setIdle(models.map((m) => m.id));
+        if (suffix !== '') {
+          statusBar.show();
+        }
       } else {
         statusManager.setNoModels();
       }
@@ -281,16 +287,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }
   };
 
-  // Initial silent probe shortly after activation, once VS Code has settled.
-  // The timer is registered as a disposable so it can't fire into a
-  // disposed provider if the extension is deactivated in the interim.
   const initialProbeTimer = setTimeout(() => {
     void refreshStatusBar();
   }, STATUS_BAR_PROBE_DELAY_MS);
   context.subscriptions.push({ dispose: () => clearTimeout(initialProbeTimer) });
 
   const testCommand = vscode.commands.registerCommand(
-    'github.copilot.llm-gateway.testConnection',
+    `${commandPrefix}.testConnection`,
     async () => {
       const cts = new vscode.CancellationTokenSource();
       try {
@@ -301,40 +304,38 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
         if (models.length > 0) {
           statusManager.setIdle(models.map((m) => m.id));
+          if (suffix !== '') {
+            statusBar.show();
+          }
           vscode.window.showInformationMessage(
-            `GitHub Copilot LLM Gateway: Successfully connected! Found ${models.length} model(s): ${models.map((m) => m.name).join(', ')}`
+            `LLM Gateway ${suffix || '1'}: Successfully connected! Found ${models.length} model(s): ${models.map((m) => m.name).join(', ')}`
           );
         } else {
           statusManager.setNoModels();
           vscode.window.showWarningMessage(
-            'GitHub Copilot LLM Gateway: Connected but no models found.'
+            `LLM Gateway ${suffix || '1'}: Connected but no models found.`
           );
         }
       } catch (error) {
         statusManager.setError(error instanceof Error ? error.message : String(error));
         vscode.window.showErrorMessage(
-          `GitHub Copilot LLM Gateway: Connection test failed. ${error instanceof Error ? error.message : String(error)}`
+          `LLM Gateway ${suffix || '1'}: Connection test failed. ${error instanceof Error ? error.message : String(error)}`
         );
       } finally {
         cts.dispose();
       }
     }
   );
-
   context.subscriptions.push(testCommand);
 
-  // "Configure Server" command — triggered by the "Add Models..." dropdown
-  // via the managementCommand contribution. Prompts for server URL (stored
-  // in workspace/user settings) and API key (stored in SecretStorage,
-  // issue #28). Refreshes the model list when done.
   const manageCommand = vscode.commands.registerCommand(
-    'github.copilot.llm-gateway.manage',
+    `${commandPrefix}.manage`,
     async () => {
-      const config = vscode.workspace.getConfiguration('github.copilot.llm-gateway');
+      const config = vscode.workspace.getConfiguration(configSection);
       const currentUrl = config.get<string>('serverUrl', 'http://localhost:8000');
 
       const url = await vscode.window.showInputBox({
-        title: 'LLM Gateway — Server URL',
+        title: `LLM Gateway ${suffix || '1'} — Server URL`,
         prompt: 'Enter the inference server URL (OpenAI-compatible endpoint)',
         value: currentUrl,
         placeHolder: 'http://localhost:8000',
@@ -348,29 +349,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           }
         },
       });
-      if (url === undefined) { return; } // cancelled
+      if (url === undefined) { return; }
 
       const apiKey = await vscode.window.showInputBox({
-        title: 'LLM Gateway — API Key',
+        title: `LLM Gateway ${suffix || '1'} — API Key`,
         prompt: 'Enter the API key — saved to VS Code\'s secret storage. Leave empty to clear.',
         password: true,
         placeHolder: 'Optional',
         ignoreFocusOut: true,
       });
-      if (apiKey === undefined) { return; } // cancelled
+      if (apiKey === undefined) { return; }
 
-      // Let the user choose Workspace vs. User scope so different VS Code
-      // windows can point at different inference servers (issue #23). Only
-      // applies to `serverUrl` — the API key is always global because
-      // SecretStorage isn't workspace-aware.
       const target = await pickConfigurationTarget(config);
-      if (target === undefined) { return; } // cancelled
+      if (target === undefined) { return; }
 
       await config.update('serverUrl', url, target);
       await provider.setApiKey(apiKey);
 
-      // The config-change listener handles reloadConfig + model refresh
-      // automatically, but we also refresh the status bar here.
       provider.invalidateModelCache();
       provider.refreshModels();
       await refreshStatusBar();
@@ -378,15 +373,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       await offerAdvancedSettings(provider);
     }
   );
-
   context.subscriptions.push(manageCommand);
 
-  // "Edit Custom Headers" command — lets users manage additional HTTP
-  // headers (e.g. `Authorization: Token …`, `Anthropic-Version`) without
-  // touching settings.json. Values are persisted via SecretStorage because
-  // these headers commonly carry credentials (issue #28).
   const editHeadersCommand = vscode.commands.registerCommand(
-    'github.copilot.llm-gateway.editCustomHeaders',
+    `${commandPrefix}.editCustomHeaders`,
     async () => {
       await editCustomHeadersFlow(provider);
       provider.invalidateModelCache();
@@ -394,25 +384,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       await refreshStatusBar();
     }
   );
-
   context.subscriptions.push(editHeadersCommand);
 
-  // Explicit "Refresh Models" command — previously users could only trigger
-  // a re-fetch by editing settings, which was confusing when models
-  // temporarily went missing.
   const refreshCommand = vscode.commands.registerCommand(
-    'github.copilot.llm-gateway.refreshModels',
+    `${commandPrefix}.refreshModels`,
     async () => {
-      // Invalidate the provider's cache so the next fetch is fresh, then
-      // fire the change event (VS Code will re-call
-      // provideLanguageModelChatInformation on its own schedule) and
-      // update the status bar immediately.
       provider.invalidateModelCache();
       provider.refreshModels();
       await refreshStatusBar();
     }
   );
-
   context.subscriptions.push(refreshCommand);
 }
 
@@ -453,9 +434,10 @@ async function offerAdvancedSettings(provider: GatewayProvider): Promise<void> {
   if (pick === headersPick) {
     await editCustomHeadersFlow(provider);
   } else if (pick === advancedPick) {
+    const configSection = `github.copilot.llm-gateway${provider.getSuffix() ? `-${provider.getSuffix()}` : ''}`;
     await vscode.commands.executeCommand(
       'workbench.action.openSettings',
-      'github.copilot.llm-gateway'
+      configSection
     );
   }
 }

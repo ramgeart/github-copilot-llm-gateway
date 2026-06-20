@@ -51,6 +51,21 @@ export function buildChatRequest(options: ChatRequestOptions): OpenAIChatComplet
     const cleanExtraOptions = Object.fromEntries(
       Object.entries(options.extraOptions).filter(([key]) => !key.startsWith('_'))
     );
+
+    // Map reasoningEffort to reasoning_effort for OpenAI/vLLM compatibility
+    if (cleanExtraOptions.reasoningEffort !== undefined) {
+      cleanExtraOptions.reasoning_effort = cleanExtraOptions.reasoningEffort;
+      delete cleanExtraOptions.reasoningEffort;
+    }
+
+    // Enable/disable thinking effort based on VS Code's enableThinking option
+    if (cleanExtraOptions.enableThinking === false) {
+      delete cleanExtraOptions.reasoning_effort;
+      delete cleanExtraOptions.enableThinking;
+    } else if (cleanExtraOptions.enableThinking === true) {
+      delete cleanExtraOptions.enableThinking;
+    }
+
     Object.assign(request, cleanExtraOptions);
   }
 

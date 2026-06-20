@@ -10,7 +10,12 @@
  */
 
 /** Keys used in SecretStorage. Mirrors the legacy setting names so logs read clearly. */
-export const SECRET_KEYS = {
+export interface SecretKeys {
+  readonly apiKey: string;
+  readonly customHeaders: string;
+}
+
+export const SECRET_KEYS: SecretKeys = {
   apiKey: 'github.copilot.llm-gateway.apiKey',
   customHeaders: 'github.copilot.llm-gateway.customHeaders',
 } as const;
@@ -94,7 +99,8 @@ export function parseCustomHeadersJson(
 export async function migrateLegacySecrets(
   config: LegacyConfigAccessor,
   secrets: SecretAccessor,
-  log: (msg: string) => void = () => { /* no-op */ }
+  log: (msg: string) => void = () => { /* no-op */ },
+  secretKeys: SecretKeys = SECRET_KEYS
 ): Promise<MigrationResult> {
   const result: MigrationResult = { apiKeyMigrated: false, customHeadersMigrated: false };
 
@@ -108,22 +114,22 @@ export async function migrateLegacySecrets(
   }
 
   if (hasLegacyKey) {
-    const existing = await secrets.get(SECRET_KEYS.apiKey);
+    const existing = await secrets.get(secretKeys.apiKey);
     if (existing) {
       log('Found legacy apiKey setting but a secret already exists; not overwriting.');
     } else {
-      await secrets.store(SECRET_KEYS.apiKey, legacyApiKey);
+      await secrets.store(secretKeys.apiKey, legacyApiKey);
       result.apiKeyMigrated = true;
       log('Migrated legacy apiKey setting into SecretStorage.');
     }
   }
 
   if (hasLegacyHeaders) {
-    const existing = await secrets.get(SECRET_KEYS.customHeaders);
+    const existing = await secrets.get(secretKeys.customHeaders);
     if (existing) {
       log('Found legacy customHeaders setting but a secret already exists; not overwriting.');
     } else {
-      await secrets.store(SECRET_KEYS.customHeaders, JSON.stringify(legacyHeaders));
+      await secrets.store(secretKeys.customHeaders, JSON.stringify(legacyHeaders));
       result.customHeadersMigrated = true;
       log(`Migrated ${Object.keys(legacyHeaders).length} legacy customHeaders into SecretStorage.`);
     }

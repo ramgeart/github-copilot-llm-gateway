@@ -126,4 +126,5 @@ export interface GatewayConfig {
   verboseLogging: boolean;
   customHeaders: Record<string, string>;
   extraModelOptions: Record<string, unknown>;
+  thinkingEffort?: string;
 }
