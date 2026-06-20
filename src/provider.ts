@@ -534,8 +534,48 @@ export class GatewayProvider implements vscode.LanguageModelChatProvider {
       response = await this.client.fetchModels(token);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      this.outputChannel.appendLine(`ERROR: Failed to fetch models: ${errorMessage}`);
-      throw error;
+      this.outputChannel.appendLine(`WARNING: Failed to fetch models: ${errorMessage}`);
+
+      let fallbackModelIds: string[] = [];
+      if (this.config.customModels && this.config.customModels.length > 0) {
+        this.outputChannel.appendLine(`Using user-configured customModels: ${this.config.customModels.join(', ')}`);
+        fallbackModelIds = this.config.customModels;
+      } else {
+        const url = this.config.serverUrl.toLowerCase();
+        if (url.includes('googleapis.com')) {
+          fallbackModelIds = [
+            'gemini-2.5-flash',
+            'gemini-2.5-pro',
+            'gemini-1.5-flash',
+            'gemini-1.5-pro',
+            'gemini-2.0-flash-thinking-exp'
+          ];
+        } else if (url.includes('deepseek.com')) {
+          fallbackModelIds = ['deepseek-chat', 'deepseek-reasoner'];
+        } else {
+          fallbackModelIds = ['gpt-4o', 'gpt-4o-mini', 'claude-3-5-sonnet', 'deepseek-chat'];
+        }
+        this.outputChannel.appendLine(`No custom models configured. Falling back to default list: ${fallbackModelIds.join(', ')}`);
+      }
+
+      response = {
+        object: 'list',
+        data: fallbackModelIds.map(id => {
+          let contextLength = 128000;
+          if (id.includes('gemini')) {
+            contextLength = 1048576;
+          } else if (id.includes('claude')) {
+            contextLength = 200000;
+          }
+          return {
+            id,
+            object: 'model',
+            created: Date.now(),
+            owned_by: 'gateway-fallback',
+            context_length: contextLength
+          };
+        })
+      };
     }
 
     if (token.isCancellationRequested) {
@@ -1234,6 +1274,7 @@ export class GatewayProvider implements vscode.LanguageModelChatProvider {
       customHeaders: { ...this.secretCache.customHeaders },
       extraModelOptions: config.get<Record<string, unknown>>('extraModelOptions', {}) ?? {},
       thinkingEffort: config.get<string>('thinkingEffort', ''),
+      customModels: config.get<string[]>('customModels', []) ?? [],
     };
 
     const MAX_INT32 = 2147483647; // Maximum value for setTimeout (signed 32-bit integer)

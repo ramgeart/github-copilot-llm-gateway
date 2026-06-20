@@ -127,4 +127,5 @@ export interface GatewayConfig {
   customHeaders: Record<string, string>;
   extraModelOptions: Record<string, unknown>;
   thinkingEffort?: string;
+  customModels?: string[];
 }

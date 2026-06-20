@@ -165,6 +165,40 @@ export class GatewayClient {
    */
   public async fetchModels(cancellationToken?: vscode.CancellationToken): Promise<OpenAIModelsResponse> {
     const base = normalizeBaseUrl(this.config.serverUrl);
+
+    // If it is a Gemini/Google API endpoint, try fetching from the Google models endpoint first
+    if (base.includes('generativelanguage.googleapis.com')) {
+      try {
+        const apiKey = this.config.apiKey || '';
+        const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
+        const response = await this.fetchWithTimeout(url, {
+          method: 'GET'
+        }, cancellationToken);
+        if (response.ok) {
+          const json = await response.json() as any;
+          if (json && Array.isArray(json.models)) {
+            const data = json.models
+              .filter((m: any) => m.name && m.name.startsWith('models/'))
+              .map((m: any) => {
+                const id = m.name.replace('models/', '');
+                let contextLength = 1048576;
+                if (id.includes('pro')) { contextLength = 2097152; }
+                return {
+                  id,
+                  object: 'model',
+                  created: Date.now(),
+                  owned_by: 'google',
+                  context_length: contextLength,
+                };
+              });
+            return { object: 'list', data };
+          }
+        }
+      } catch (e) {
+        this.log(`Failed to fetch models natively from Gemini API: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+
     const candidates = [`${base}/v1/models`, `${base}/models`];
     let lastError: Error | undefined;
 
