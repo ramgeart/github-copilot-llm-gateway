@@ -135,36 +135,14 @@ export async function migrateLegacySecrets(
     }
   }
 
-  // Always clear the legacy settings once we know the value is safely captured —
-  // either by this migration run or by a previous one. Leaving the plain-text
-  // value behind would defeat the whole point of the move.
-  if (hasLegacyKey) {
-    await clearLegacySetting(config, 'apiKey');
-  }
-  if (hasLegacyHeaders) {
-    await clearLegacySetting(config, 'customHeaders');
-  }
+  // We no longer clear the legacy settings from settings.json because the user
+  // wants to be able to configure providers directly from the extension settings view.
+  // Keeping keys in settings.json allows settings-based configuration to be first-class.
 
   return result;
 }
 
-/**
- * Remove `section` from whichever configuration scopes currently hold a
- * concrete value. We touch both Workspace and Global so users don't have a
- * forgotten copy lingering in one scope after migration.
- */
-async function clearLegacySetting(
-  config: LegacyConfigAccessor,
-  section: string
-): Promise<void> {
-  const inspection = config.inspect(section);
-  if (inspection?.workspaceValue !== undefined) {
-    await config.update(section, undefined, ConfigurationTarget.Workspace);
-  }
-  if (inspection?.globalValue !== undefined) {
-    await config.update(section, undefined, ConfigurationTarget.Global);
-  }
-}
+
 
 /**
  * Compose the user-facing toast for a successful migration. Returns

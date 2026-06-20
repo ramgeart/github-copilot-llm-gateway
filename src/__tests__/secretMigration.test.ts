@@ -129,7 +129,7 @@ describe('migrateLegacySecrets', () => {
     assert.equal(secrets.raw(SECRET_KEYS.customHeaders), undefined);
   });
 
-  test('moves a legacy apiKey into secrets and clears the setting', async () => {
+  test('moves a legacy apiKey into secrets and keeps the setting', async () => {
     const config = new FakeConfig();
     config.setGlobal('apiKey', 'sk-secret');
     const secrets = new FakeSecrets();
@@ -138,10 +138,10 @@ describe('migrateLegacySecrets', () => {
 
     assert.equal(result.apiKeyMigrated, true);
     assert.equal(secrets.raw(SECRET_KEYS.apiKey), 'sk-secret');
-    assert.equal(config.rawGlobal('apiKey'), undefined);
+    assert.equal(config.rawGlobal('apiKey'), 'sk-secret');
   });
 
-  test('moves a legacy customHeaders object into secrets and clears the setting', async () => {
+  test('moves a legacy customHeaders object into secrets and keeps the setting', async () => {
     const config = new FakeConfig();
     config.setGlobal('customHeaders', { Authorization: 'Bearer xyz', 'HTTP-Referer': 'https://a' });
     const secrets = new FakeSecrets();
@@ -155,10 +155,10 @@ describe('migrateLegacySecrets', () => {
       Authorization: 'Bearer xyz',
       'HTTP-Referer': 'https://a',
     });
-    assert.equal(config.rawGlobal('customHeaders'), undefined);
+    assert.deepEqual(config.rawGlobal('customHeaders'), { Authorization: 'Bearer xyz', 'HTTP-Referer': 'https://a' });
   });
 
-  test('clears the legacy setting from both workspace and global scopes', async () => {
+  test('keeps the legacy setting in both workspace and global scopes', async () => {
     const config = new FakeConfig();
     config.setWorkspace('apiKey', 'workspace-key');
     config.setGlobal('apiKey', 'global-key');
@@ -166,13 +166,13 @@ describe('migrateLegacySecrets', () => {
 
     await migrateLegacySecrets(config, secrets);
 
-    assert.equal(config.rawWorkspace('apiKey'), undefined);
-    assert.equal(config.rawGlobal('apiKey'), undefined);
+    assert.equal(config.rawWorkspace('apiKey'), 'workspace-key');
+    assert.equal(config.rawGlobal('apiKey'), 'global-key');
     // Workspace value is what `get` returns when set, so that's the one that got captured.
     assert.equal(secrets.raw(SECRET_KEYS.apiKey), 'workspace-key');
   });
 
-  test('does not overwrite an existing secret', async () => {
+  test('does not overwrite an existing secret and keeps the setting', async () => {
     const config = new FakeConfig();
     config.setGlobal('apiKey', 'plain-text-key');
     const secrets = new FakeSecrets();
@@ -182,8 +182,7 @@ describe('migrateLegacySecrets', () => {
 
     assert.equal(result.apiKeyMigrated, false);
     assert.equal(secrets.raw(SECRET_KEYS.apiKey), 'already-stored');
-    // Legacy setting is still cleared because the value is safely captured elsewhere.
-    assert.equal(config.rawGlobal('apiKey'), undefined);
+    assert.equal(config.rawGlobal('apiKey'), 'plain-text-key');
   });
 
   test('treats whitespace-only apiKey as empty (does not migrate)', async () => {

@@ -301,8 +301,11 @@ export class GatewayProvider implements vscode.LanguageModelChatProvider {
   public async loadSecrets(): Promise<void> {
     const config = this.legacyConfigAccessor();
     try {
-      const result = await migrateLegacySecrets(config, this.secrets, (m) =>
-        this.outputChannel.appendLine(m)
+      const result = await migrateLegacySecrets(
+        config,
+        this.secrets,
+        (m) => this.outputChannel.appendLine(m),
+        this.secretKeys
       );
       const toast = formatMigrationToast(result);
       if (toast) {
@@ -1252,14 +1255,14 @@ export class GatewayProvider implements vscode.LanguageModelChatProvider {
     // path, but are cleared once their values are safely in SecretStorage
     // (issue #28). Until `loadSecrets` runs, the cache holds empty values —
     // an early model fetch would just send unauthenticated requests.
+    const settingsApiKey = (config.get<string>('apiKey', '') ?? '').trim();
+    const resolvedSecretApiKey = this.secretCache.apiKey;
     const cfg: GatewayConfig = {
       serverUrl: config.get<string>('serverUrl', 'http://localhost:8000'),
       // Framework-managed API key (from VS Code's native model-picker UI) wins
-      // over the SecretStorage cache. Falls back to SecretStorage when nothing
-      // has come in via the configuration arg yet, which preserves the
-      // existing Configure Server flow for users on builds without the
-      // framework UI.
-      apiKey: resolveApiKey(this.frameworkOverride, this.secretCache.apiKey),
+      // over the settings-configured API key and the SecretStorage cache.
+      // Settings-configured API key wins over the SecretStorage cache.
+      apiKey: resolveApiKey(this.frameworkOverride, settingsApiKey || resolvedSecretApiKey),
       requestTimeout: config.get<number>('requestTimeout', DEFAULT_REQUEST_TIMEOUT_MS),
       defaultMaxTokens: config.get<number>('defaultMaxTokens', TOKEN_CONSTANTS.DEFAULT_CONTEXT_TOKENS),
       defaultMaxOutputTokens: config.get<number>(
@@ -1271,7 +1274,10 @@ export class GatewayProvider implements vscode.LanguageModelChatProvider {
       parallelToolCalling: config.get<boolean>('parallelToolCalling', true),
       agentTemperature: config.get<number>('agentTemperature', 0),
       verboseLogging: config.get<boolean>('verboseLogging', false),
-      customHeaders: { ...this.secretCache.customHeaders },
+      customHeaders: {
+        ...this.secretCache.customHeaders,
+        ...this.getSanitizedSettingsHeaders(config),
+      },
       extraModelOptions: config.get<Record<string, unknown>>('extraModelOptions', {}) ?? {},
       thinkingEffort: config.get<string>('thinkingEffort', ''),
       customModels: config.get<string[]>('customModels', []) ?? [],
@@ -1341,6 +1347,17 @@ export class GatewayProvider implements vscode.LanguageModelChatProvider {
     }
 
     return cfg;
+  }
+
+  private getSanitizedSettingsHeaders(config: vscode.WorkspaceConfiguration): Record<string, string> {
+    const settingsHeaders = config.get<Record<string, unknown>>('customHeaders', {}) ?? {};
+    const sanitized: Record<string, string> = {};
+    for (const [k, v] of Object.entries(settingsHeaders)) {
+      if (typeof v === 'string' && k.length > 0) {
+        sanitized[k] = v;
+      }
+    }
+    return sanitized;
   }
 
   private reloadConfig(): void {

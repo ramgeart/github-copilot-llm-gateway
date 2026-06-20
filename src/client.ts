@@ -169,7 +169,17 @@ export class GatewayClient {
     // If it is a Gemini/Google API endpoint, try fetching from the Google models endpoint first
     if (base.includes('generativelanguage.googleapis.com')) {
       try {
-        const apiKey = this.config.apiKey || '';
+        let apiKey = this.config.apiKey || '';
+        if (!apiKey && this.config.customHeaders) {
+          const authHeader = this.config.customHeaders['Authorization'] || this.config.customHeaders['authorization'];
+          if (authHeader && authHeader.startsWith('Bearer ')) {
+            apiKey = authHeader.substring(7).trim();
+          }
+          const googHeader = this.config.customHeaders['x-goog-api-key'] || this.config.customHeaders['X-Goog-Api-Key'];
+          if (googHeader) {
+            apiKey = googHeader.trim();
+          }
+        }
         const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
         const response = await this.fetchWithTimeout(url, {
           method: 'GET'
