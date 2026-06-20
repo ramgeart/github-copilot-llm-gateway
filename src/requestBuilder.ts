@@ -48,7 +48,10 @@ export function buildChatRequest(options: ChatRequestOptions): OpenAIChatComplet
   }
 
   if (options.extraOptions) {
-    Object.assign(request, options.extraOptions);
+    const cleanExtraOptions = Object.fromEntries(
+      Object.entries(options.extraOptions).filter(([key]) => !key.startsWith('_'))
+    );
+    Object.assign(request, cleanExtraOptions);
   }
 
   return request;

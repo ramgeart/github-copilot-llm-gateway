@@ -72,6 +72,34 @@ It also keeps the familiar benefits of self-hosting: inference stays on your net
 
 Install **GitHub Copilot LLM Gateway** from the VS Code Marketplace.
 
+#### Alternative: Install from Source / Repository
+If you want to run the latest development version or install directly from this repository:
+
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/ramgeart/github-copilot-llm-gateway.git
+   cd github-copilot-llm-gateway
+   ```
+
+2. **Install dependencies:**
+   ```bash
+   npm install
+   ```
+
+3. **Package the extension as a VSIX file:**
+   ```bash
+   npm run package
+   ```
+   This generates a package file named `github-copilot-llm-gateway-1.1.0.vsix` in the project root.
+
+4. **Install it in VS Code:**
+   * **Via Command Line:**
+     ```bash
+     code --install-extension github-copilot-llm-gateway-*.vsix
+     ```
+     *(Use `code-insiders` instead of `code` if you are using VS Code Insiders)*
+   * **Via VS Code UI:** Open VS Code, open the Extensions view (`Ctrl+Shift+X` / `Cmd+Shift+X`), click the **`...`** (More Actions) menu button in the top right corner of the Extensions view, choose **Install from VSIX...**, select the generated `.vsix` file, and reload your window.
+
 <!-- Screenshot: Extension in marketplace -->
 
 ### Step 2: Start Your Inference Server

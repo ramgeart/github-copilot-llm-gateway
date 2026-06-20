@@ -107,6 +107,25 @@ describe('buildChatRequest', () => {
     assert.equal(req.repetition_penalty, 1.1);
   });
 
+  test('filters out internal options starting with underscore', () => {
+    const req = buildChatRequest({
+      model: 'm',
+      messages: [],
+      maxTokens: 10,
+      temperature: 0.5,
+      extraOptions: {
+        top_k: 40,
+        _otelTraceContext: 'something',
+        _capturingTokenCorrelationId: 'xyz',
+        _telemetryTurn: 2,
+      },
+    });
+    assert.equal(req.top_k, 40);
+    assert.equal((req as any)._otelTraceContext, undefined);
+    assert.equal((req as any)._capturingTokenCorrelationId, undefined);
+    assert.equal((req as any)._telemetryTurn, undefined);
+  });
+
   test('handles `none` toolChoice', () => {
     const req = buildChatRequest({
       model: 'm',
